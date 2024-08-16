@@ -8,6 +8,9 @@ from urllib.parse import quote
 from bs4 import BeautifulSoup
 import os
 import json
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
 
 # Obtener credenciales desde variables de entorno
 SERVICE_ACCOUNT_INFO = json.loads(os.getenv('GOOGLE_SERVICE_ACCOUNT'))
@@ -145,14 +148,19 @@ def main():
             print(f'Verificado Instagram {insta_usuario[0]}: {insta_status}')
             print(f'Verificado Tinder {tinder_usuario[0]}: {tinder_status}')
 
-            time.sleep(randint(15, 25))  # rango de espera aletarorio 15/25
+            time.sleep(randint(15, 25))  # rango de espera aleatorio 15/25
 
-        # actualizacion de resultados
+        # Actualización de resultados
         update_values('I3:I28', instagram_resultados)
         update_values('K3:K28', tinder_resultados)
         update_values('L3:L28', resumen_resultados)
     else:
         print("No se pudieron obtener los valores.")
 
+@app.route('/verificar', methods=['POST'])
+def verificar():
+    main()  # Ejecuta la función principal que ya tienes
+    return jsonify({"status": "Verificación completada"}), 200
+
 if __name__ == "__main__":
-    main()
+    app.run(host='0.0.0.0', port=5000)
