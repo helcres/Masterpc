@@ -13,45 +13,33 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 # Obtener las credenciales desde la variable de entorno
+creds_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+if not creds_json:
+    raise ValueError("La variable de entorno GOOGLE_APPLICATION_CREDENTIALS no está configurada")
+
+# Cargar las credenciales desde el JSON en la variable de entorno
 try:
-    creds_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-    if not creds_json:
-        raise ValueError("La variable de entorno GOOGLE_APPLICATION_CREDENTIALS no está configurada")
-    
-    # Cargar las credenciales desde el JSON en la variable de entorno
     creds_info = json.loads(creds_json)
     creds = service_account.Credentials.from_service_account_info(creds_info)
-    
-    # Construir el servicio de Google Sheets
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
     service = build('sheets', 'v4', credentials=creds)
-except Exception as e:
+except ValueError as e:
     print(f"Error al cargar las credenciales de Google: {e}")
     service = None
+except Exception as e:
+    print(f"Error desconocido: {e}")
+    service = None
 
-# ID y nombre de la hoja de cálculo
 SPREADSHEET_ID = '1xmBGzom4JuLMq--7OgJGRa48BucODBcuygo0B0-H6js'
-RANGE_INSTAGRAM = 'B3:B28'  # Rango para usuarios de Instagram
-RANGE_TINDER = 'J3:J28'     # Rango para usuarios de Tinder
+RANGE_INSTAGRAM = 'B3:B28'
+RANGE_TINDER = 'J3:J28'
 
-# Lista ampliada de User-Agents
 USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15',
-    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_2_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36',
+    # Lista de User-Agents...
 ]
 
-# Lista de proxies actualizada
 PROXIES = [
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
+    # Lista de Proxies...
 ]
 
 def check_instagram_status(username):
@@ -75,11 +63,12 @@ def check_instagram_status(username):
             return 'Banned/Deleted'
         else:
             return 'Unknown'
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"Error en la solicitud a Instagram: {e}")
         return 'Error'
 
 def check_tinder_status(username):
-    # Aquí se colocaría la lógica para verificar el estado en Tinder, simulando una respuesta
+    # Implementa la lógica real aquí
     return 'Simulated Status'
 
 @app.route('/check_status', methods=['POST'])
@@ -89,11 +78,8 @@ def check_status():
 
     sheet = service.spreadsheets()
     try:
-        # Obtener usuarios de Instagram
         result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
         usernames_instagram = result_instagram.get('values', [])
-
-        # Obtener usuarios de Tinder
         result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
         usernames_tinder = result_tinder.get('values', [])
 
@@ -102,8 +88,8 @@ def check_status():
         summaries = []
 
         for i in range(len(usernames_instagram)):
-            ig_status = check_instagram_status(usernames_instagram[i][0])
-            t_status = check_tinder_status(usernames_tinder[i][0])
+            ig_status = check_instagram_status(usernames_instagram[i][0] if usernames_instagram[i] else '')
+            t_status = check_tinder_status(usernames_tinder[i][0] if usernames_tinder[i] else '')
 
             statuses_instagram.append([ig_status])
             statuses_tinder.append([t_status])
@@ -115,9 +101,8 @@ def check_status():
             else:
                 summaries.append(['Mixed Status'])
 
-            time.sleep(10)  # Esperar 10 segundos entre verificaciones
+            time.sleep(10)
 
-        # Guardar los resultados en la hoja de cálculo
         sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses_instagram}).execute()
         sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses_tinder}).execute()
         sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='L3:L28', valueInputOption='RAW', body={'values': summaries}).execute()
@@ -126,6 +111,8 @@ def check_status():
 
     except HttpError as error:
         return jsonify({'status': 'Error', 'details': str(error)})
+    except Exception as e:
+        return jsonify({'status': 'Error', 'details': f'Error desconocido: {e}'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
