@@ -1,6 +1,6 @@
 import time
 import requests
-from random import choice, randint
+from random import choice
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from googleapiclient.errors import HttpError
@@ -12,10 +12,22 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Credenciales de la cuenta de servicio
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-
-service = build('sheets', 'v4', credentials=creds)
+# Obtener las credenciales desde la variable de entorno
+try:
+    creds_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    if not creds_json:
+        raise ValueError("La variable de entorno GOOGLE_APPLICATION_CREDENTIALS no está configurada")
+    
+    # Cargar las credenciales desde el JSON en la variable de entorno
+    creds_info = json.loads(creds_json)
+    creds = service_account.Credentials.from_service_account_info(creds_info)
+    
+    # Construir el servicio de Google Sheets
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    service = build('sheets', 'v4', credentials=creds)
+except Exception as e:
+    print(f"Error al cargar las credenciales de Google: {e}")
+    service = None
 
 # ID y nombre de la hoja de cálculo
 SPREADSHEET_ID = '1xmBGzom4JuLMq--7OgJGRa48BucODBcuygo0B0-H6js'
@@ -72,6 +84,9 @@ def check_tinder_status(username):
 
 @app.route('/check_status', methods=['POST'])
 def check_status():
+    if not service:
+        return jsonify({'status': 'Error', 'details': 'El servicio de Google Sheets no está disponible'})
+
     sheet = service.spreadsheets()
     try:
         # Obtener usuarios de Instagram
@@ -111,3 +126,6 @@ def check_status():
 
     except HttpError as error:
         return jsonify({'status': 'Error', 'details': str(error)})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
