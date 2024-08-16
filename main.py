@@ -9,6 +9,22 @@ from bs4 import BeautifulSoup
 import os
 import json
 from flask import Flask, request, jsonify
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
+def check_instagram_status(username):
+    logging.debug(f"USER_AGENTS: {USER_AGENTS}")
+    logging.debug(f"PROXIES: {PROXIES}")
+
+    headers = {
+        'User-Agent': choice(USER_AGENTS) if USER_AGENTS else 'Mozilla/5.0'
+    }
+    proxy = {
+        'http': choice(PROXIES) if PROXIES else None,
+        'https': choice(PROXIES) if PROXIES else None,
+    }
+    # Resto del código
 
 app = Flask(__name__)
 
