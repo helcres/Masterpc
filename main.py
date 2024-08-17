@@ -9,46 +9,30 @@ from bs4 import BeautifulSoup
 import os
 import json
 from flask import Flask, request, jsonify
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-
-def check_instagram_status(username):
-    logging.debug(f"USER_AGENTS: {USER_AGENTS}")
-    logging.debug(f"PROXIES: {PROXIES}")
-
-    headers = {
-        'User-Agent': choice(USER_AGENTS) if USER_AGENTS else 'Mozilla/5.0'
-    }
-    proxy = {
-        'http': choice(PROXIES) if PROXIES else None,
-        'https': choice(PROXIES) if PROXIES else None,
-    }
-    # Resto del código
 
 app = Flask(__name__)
 
 # Obtener las credenciales desde la variable de entorno
-creds_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-if not creds_json:
-    raise ValueError("La variable de entorno GOOGLE_APPLICATION_CREDENTIALS no está configurada")
-
-# Cargar las credenciales desde el JSON en la variable de entorno
 try:
+    creds_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    if not creds_json:
+        raise ValueError("La variable de entorno GOOGLE_APPLICATION_CREDENTIALS no está configurada")
+    
+    # Cargar las credenciales desde el JSON en la variable de entorno
     creds_info = json.loads(creds_json)
     creds = service_account.Credentials.from_service_account_info(creds_info)
+    
+    # Construir el servicio de Google Sheets
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
     service = build('sheets', 'v4', credentials=creds)
-except ValueError as e:
+except Exception as e:
     print(f"Error al cargar las credenciales de Google: {e}")
     service = None
-except Exception as e:
-    print(f"Error desconocido: {e}")
-    service = None
 
+# ID y nombre de la hoja de cálculo
 SPREADSHEET_ID = '1xmBGzom4JuLMq--7OgJGRa48BucODBcuygo0B0-H6js'
-RANGE_INSTAGRAM = 'B3:B28'
-RANGE_TINDER = 'J3:J28'
+RANGE_INSTAGRAM = 'B3:B28'  # Rango para usuarios de Instagram
+RANGE_TINDER = 'J3:J28'     # Rango para usuarios de Tinder
 
 # Lista ampliada de User-Agents
 USER_AGENTS = [
@@ -61,6 +45,7 @@ USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_2_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36',
 ]
 
+# Lista de proxies actualizada
 PROXIES = [
     "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
     "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
@@ -69,7 +54,9 @@ PROXIES = [
     "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
 ]
 
-def check_instagram_status(username):
+def verificar_instagram(usuario):
+    """Verifica el estado de un usuario de Instagram."""
+    url = f'https://www.instagram.com/{quote(usuario)}/'
     headers = {
         'User-Agent': choice(USER_AGENTS)
     }
@@ -77,69 +64,62 @@ def check_instagram_status(username):
         'http': choice(PROXIES),
         'https': choice(PROXIES),
     }
-    url = f'https://www.instagram.com/{quote(username)}/'
     try:
         response = requests.get(url, headers=headers, proxies=proxy, timeout=10)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             if 'Page Not Found' in soup.title.text:
-                return 'Banned/Deleted'
+                return 'Baneada/Eliminada'
             else:
-                return 'Active'
+                return 'Activa'
         elif response.status_code == 404:
-            return 'Banned/Deleted'
+            return 'Baneada/Eliminada'
         else:
-            return 'Unknown'
-    except requests.exceptions.RequestException as e:
-        print(f"Error en la solicitud a Instagram: {e}")
+            return 'Desconocido'
+    except requests.exceptions.RequestException:
         return 'Error'
 
-def check_tinder_status(username):
-    # Implementa la lógica real aquí
-    return 'Simulated Status'
+def verificar_tinder(usuario):
+    """Verifica el estado de un usuario de Tinder."""
+    url = f"https://tinder.com/@{quote(usuario)}"
+    headers = {
+        'User-Agent': choice(USER_AGENTS)
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            title_tag = soup.find('title')
+            if title_tag and usuario.lower() in title_tag.text.lower():
+                return "Activa"
+            else:
+                return "Baneada"
+        else:
+            return "Baneada"
+    except requests.exceptions.RequestException as e:
+        print(f"Error al verificar {usuario}: {e}")
+        return "Error al verificar"
 
 @app.route('/check_status', methods=['POST'])
 def check_status():
+    """Verifica si el servicio está funcionando correctamente."""
     if not service:
         return jsonify({'status': 'Error', 'details': 'El servicio de Google Sheets no está disponible'})
 
-    sheet = service.spreadsheets()
     try:
+        # Verificar si el servicio de Google Sheets puede ser accedido
+        sheet = service.spreadsheets()
         result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
-        usernames_instagram = result_instagram.get('values', [])
         result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
-        usernames_tinder = result_tinder.get('values', [])
 
-        statuses_instagram = []
-        statuses_tinder = []
-        summaries = []
-
-        for i in range(len(usernames_instagram)):
-            ig_status = check_instagram_status(usernames_instagram[i][0] if usernames_instagram[i] else '')
-            t_status = check_tinder_status(usernames_tinder[i][0] if usernames_tinder[i] else '')
-
-            statuses_instagram.append([ig_status])
-            statuses_tinder.append([t_status])
-
-            if ig_status == 'Banned/Deleted' and t_status == 'Banned/Deleted':
-                summaries.append(['Both Banned'])
-            elif ig_status == 'Active' and t_status == 'Active':
-                summaries.append(['Both Active'])
-            else:
-                summaries.append(['Mixed Status'])
-
-            time.sleep(10)
-
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses_instagram}).execute()
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses_tinder}).execute()
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='L3:L28', valueInputOption='RAW', body={'values': summaries}).execute()
-
-        return jsonify({'status': 'Success'})
+        # Si llegamos aquí, significa que no hubo errores
+        return jsonify({'status': 'Success', 'details': 'El servicio está funcionando correctamente'})
 
     except HttpError as error:
         return jsonify({'status': 'Error', 'details': str(error)})
     except Exception as e:
-        return jsonify({'status': 'Error', 'details': f'Error desconocido: {e}'})
+        return jsonify({'status': 'Error', 'details': str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
