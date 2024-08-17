@@ -78,21 +78,42 @@ def check_instagram_status(username):
         return 'Error'
 
 def check_tinder_status(username):
-    # Implementa la lógica real aquí
-    return 'Simulated Status'
+    headers = {
+        'User-Agent': choice(USER_AGENTS)
+    }
+    url = f'https://tinder.com/@{quote(username)}'
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            title_tag = soup.find('title')
+            if title_tag and username.lower() in title_tag.text.lower():
+                return "Activa"
+            else:
+                return "Baneada"
+        else:
+            return "Baneada"
+    except requests.exceptions.RequestException as e:
+        print(f"Error al verificar {username}: {e}")
+        return "Error al verificar"
 
 @app.route('/check_instagram_status', methods=['POST'])
 def check_instagram_status_route():
+    if not service:
+        return jsonify({'status': 'Error', 'details': 'El servicio de Google Sheets no está disponible'})
+
+    sheet = service.spreadsheets()
     try:
-        sheet = service.spreadsheets()
         result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
         usernames_instagram = result_instagram.get('values', [])
 
         statuses_instagram = []
-        for i in range(len(usernames_instagram)):
-            ig_status = check_instagram_status(usernames_instagram[i][0] if usernames_instagram[i] else '')
+
+        for username in usernames_instagram:
+            ig_status = check_instagram_status(username[0] if username else '')
             statuses_instagram.append([ig_status])
-            time.sleep(10)  # Espera de 10 segundos entre solicitudes
+
+            time.sleep(10)
 
         sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses_instagram}).execute()
 
@@ -105,61 +126,23 @@ def check_instagram_status_route():
 
 @app.route('/check_tinder_status', methods=['POST'])
 def check_tinder_status_route():
-    try:
-        sheet = service.spreadsheets()
-        result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
-        usernames_tinder = result_tinder.get('values', [])
-
-        statuses_tinder = []
-        for i in range(len(usernames_tinder)):
-            t_status = check_tinder_status(usernames_tinder[i][0] if usernames_tinder[i] else '')
-            statuses_tinder.append([t_status])
-            time.sleep(10)  # Espera de 10 segundos entre solicitudes
-
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses_tinder}).execute()
-
-        return jsonify({'status': 'Success'})
-
-    except HttpError as error:
-        return jsonify({'status': 'Error', 'details': str(error)})
-    except Exception as e:
-        return jsonify({'status': 'Error', 'details': f'Error desconocido: {e}'})
-
-@app.route('/check_status', methods=['POST'])
-def check_status():
     if not service:
         return jsonify({'status': 'Error', 'details': 'El servicio de Google Sheets no está disponible'})
 
+    sheet = service.spreadsheets()
     try:
-        sheet = service.spreadsheets()
-        result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
-        usernames_instagram = result_instagram.get('values', [])
         result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
         usernames_tinder = result_tinder.get('values', [])
 
-        statuses_instagram = []
         statuses_tinder = []
-        summaries = []
 
-        for i in range(len(usernames_instagram)):
-            ig_status = check_instagram_status(usernames_instagram[i][0] if usernames_instagram[i] else '')
-            t_status = check_tinder_status(usernames_tinder[i][0] if usernames_tinder[i] else '')
-
-            statuses_instagram.append([ig_status])
+        for username in usernames_tinder:
+            t_status = check_tinder_status(username[0] if username else '')
             statuses_tinder.append([t_status])
-
-            if ig_status == 'Banned/Deleted' and t_status == 'Banned/Deleted':
-                summaries.append(['Both Banned'])
-            elif ig_status == 'Active' and t_status == 'Active':
-                summaries.append(['Both Active'])
-            else:
-                summaries.append(['Mixed Status'])
 
             time.sleep(10)
 
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses_instagram}).execute()
         sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses_tinder}).execute()
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='L3:L28', valueInputOption='RAW', body={'values': summaries}).execute()
 
         return jsonify({'status': 'Success'})
 
