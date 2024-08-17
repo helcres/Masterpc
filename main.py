@@ -44,7 +44,6 @@ USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_2_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36',
 ]
 
-
 PROXIES = [
     "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
     "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
@@ -82,13 +81,57 @@ def check_tinder_status(username):
     # Implementa la lógica real aquí
     return 'Simulated Status'
 
+@app.route('/check_instagram_status', methods=['POST'])
+def check_instagram_status_route():
+    try:
+        sheet = service.spreadsheets()
+        result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
+        usernames_instagram = result_instagram.get('values', [])
+
+        statuses_instagram = []
+        for i in range(len(usernames_instagram)):
+            ig_status = check_instagram_status(usernames_instagram[i][0] if usernames_instagram[i] else '')
+            statuses_instagram.append([ig_status])
+            time.sleep(10)  # Espera de 10 segundos entre solicitudes
+
+        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses_instagram}).execute()
+
+        return jsonify({'status': 'Success'})
+
+    except HttpError as error:
+        return jsonify({'status': 'Error', 'details': str(error)})
+    except Exception as e:
+        return jsonify({'status': 'Error', 'details': f'Error desconocido: {e}'})
+
+@app.route('/check_tinder_status', methods=['POST'])
+def check_tinder_status_route():
+    try:
+        sheet = service.spreadsheets()
+        result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
+        usernames_tinder = result_tinder.get('values', [])
+
+        statuses_tinder = []
+        for i in range(len(usernames_tinder)):
+            t_status = check_tinder_status(usernames_tinder[i][0] if usernames_tinder[i] else '')
+            statuses_tinder.append([t_status])
+            time.sleep(10)  # Espera de 10 segundos entre solicitudes
+
+        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses_tinder}).execute()
+
+        return jsonify({'status': 'Success'})
+
+    except HttpError as error:
+        return jsonify({'status': 'Error', 'details': str(error)})
+    except Exception as e:
+        return jsonify({'status': 'Error', 'details': f'Error desconocido: {e}'})
+
 @app.route('/check_status', methods=['POST'])
 def check_status():
     if not service:
         return jsonify({'status': 'Error', 'details': 'El servicio de Google Sheets no está disponible'})
 
-    sheet = service.spreadsheets()
     try:
+        sheet = service.spreadsheets()
         result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
         usernames_instagram = result_instagram.get('values', [])
         result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
