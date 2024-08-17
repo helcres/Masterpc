@@ -78,24 +78,24 @@ def check_instagram_status(username):
         return 'Error'
 
 def check_tinder_status(username):
+    url = f"https://tinder.com/@{quote(username)}"
     headers = {
         'User-Agent': choice(USER_AGENTS)
     }
-    url = f'https://tinder.com/@{quote(username)}'
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
             title_tag = soup.find('title')
             if title_tag and username.lower() in title_tag.text.lower():
-                return "Activa"
+                return "Active"
             else:
-                return "Baneada"
+                return "Banned"
         else:
-            return "Baneada"
+            return "Banned"
     except requests.exceptions.RequestException as e:
         print(f"Error al verificar {username}: {e}")
-        return "Error al verificar"
+        return "Error"
 
 @app.route('/check_instagram_status', methods=['POST'])
 def check_instagram_status_route():
@@ -104,21 +104,18 @@ def check_instagram_status_route():
 
     sheet = service.spreadsheets()
     try:
-        result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
-        usernames_instagram = result_instagram.get('values', [])
+        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
+        usernames = result.get('values', [])
 
-        statuses_instagram = []
-
-        for username in usernames_instagram:
-            ig_status = check_instagram_status(username[0] if username else '')
-            statuses_instagram.append([ig_status])
+        statuses = []
+        for i in range(len(usernames)):
+            ig_status = check_instagram_status(usernames[i][0] if usernames[i] else '')
+            statuses.append([ig_status])
 
             time.sleep(10)
 
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses_instagram}).execute()
-
+        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses}).execute()
         return jsonify({'status': 'Success'})
-
     except HttpError as error:
         return jsonify({'status': 'Error', 'details': str(error)})
     except Exception as e:
@@ -131,21 +128,18 @@ def check_tinder_status_route():
 
     sheet = service.spreadsheets()
     try:
-        result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
-        usernames_tinder = result_tinder.get('values', [])
+        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
+        usernames = result.get('values', [])
 
-        statuses_tinder = []
-
-        for username in usernames_tinder:
-            t_status = check_tinder_status(username[0] if username else '')
-            statuses_tinder.append([t_status])
+        statuses = []
+        for i in range(len(usernames)):
+            t_status = check_tinder_status(usernames[i][0] if usernames[i] else '')
+            statuses.append([t_status])
 
             time.sleep(10)
 
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses_tinder}).execute()
-
+        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses}).execute()
         return jsonify({'status': 'Success'})
-
     except HttpError as error:
         return jsonify({'status': 'Error', 'details': str(error)})
     except Exception as e:
