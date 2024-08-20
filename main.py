@@ -1,11 +1,12 @@
 import time
 import requests
 from random import choice
+from urllib.parse import quote
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from googleapiclient.errors import HttpError
-from urllib.parse import quote
-from bs4 import BeautifulSoup
 import os
 import json
 from flask import Flask, request, jsonify
@@ -44,25 +45,13 @@ USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_2_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36',
 ]
 
-PROXIES = [
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-    "http://xzJoPZOELjvXOpQtKPXz217nvoytQK:zF0g32D7fYQbvTTY@proxy.digiproxy.cc:8082",
-]
-
 def check_instagram_status(username):
     headers = {
         'User-Agent': choice(USER_AGENTS)
     }
-    proxy = {
-        'http': choice(PROXIES),
-        'https': choice(PROXIES),
-    }
     url = f'https://www.instagram.com/{quote(username)}/'
     try:
-        response = requests.get(url, headers=headers, proxies=proxy, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             if 'Page Not Found' in soup.title.text:
@@ -74,8 +63,7 @@ def check_instagram_status(username):
         else:
             return 'Unknown'
     except requests.exceptions.RequestException as e:
-        print(f"Error en la solicitud a Instagram: {e}")
-        return 'Error'
+        return f"Error: {e}"
 
 def check_tinder_status(username):
     url = f"https://tinder.com/@{quote(username)}"
@@ -94,56 +82,58 @@ def check_tinder_status(username):
         else:
             return "Banned"
     except requests.exceptions.RequestException as e:
-        print(f"Error al verificar {username}: {e}")
-        return "Error"
+        return f"Error: {e}"
 
-@app.route('/check_instagram_status', methods=['POST'])
-def check_instagram_status_route():
+def update_google_sheet(range_name, values):
     if not service:
-        return jsonify({'status': 'Error', 'details': 'El servicio de Google Sheets no está disponible'})
-
-    sheet = service.spreadsheets()
+        print("El servicio de Google Sheets no está disponible")
+        return
+    
     try:
-        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
-        usernames = result.get('values', [])
-
-        statuses = []
-        for i in range(len(usernames)):
-            ig_status = check_instagram_status(usernames[i][0] if usernames[i] else '')
-            statuses.append([ig_status])
-
-            time.sleep(10)
-
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='I3:I28', valueInputOption='RAW', body={'values': statuses}).execute()
-        return jsonify({'status': 'Success'})
+        sheet = service.spreadsheets()
+        body = {'values': values}
+        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range=range_name, valueInputOption='RAW', body=body).execute()
     except HttpError as error:
-        return jsonify({'status': 'Error', 'details': str(error)})
+        print(f"Error al actualizar Google Sheets: {error}")
+
+@app.route('/check_status', methods=['POST'])
+def check_status():
+    start_time = time.time()
+
+    try:
+        sheet = service.spreadsheets()
+
+        # Obtener nombres de usuario de Instagram
+        result_instagram = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_INSTAGRAM).execute()
+        instagram_usernames = [row[0] for row in result_instagram.get('values', [])]
+
+        # Obtener nombres de usuario de Tinder
+        result_tinder = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
+        tinder_usernames = [row[0] for row in result_tinder.get('values', [])]
+
+        # Ejecutar verificación de Instagram
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            instagram_results = list(executor.map(check_instagram_status, instagram_usernames))
+            time.sleep(2)
+
+        # Ejecutar verificación de Tinder
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            tinder_results = list(executor.map(check_tinder_status, tinder_usernames))
+            time.sleep(2)
+
+        # Actualizar Google Sheets con los resultados
+        instagram_statuses = [[status] for status in instagram_results]
+        tinder_statuses = [[status] for status in tinder_results]
+
+        update_google_sheet('I3:I28', instagram_statuses)
+        update_google_sheet('K3:K28', tinder_statuses)
+
     except Exception as e:
         return jsonify({'status': 'Error', 'details': f'Error desconocido: {e}'})
 
-@app.route('/check_tinder_status', methods=['POST'])
-def check_tinder_status_route():
-    if not service:
-        return jsonify({'status': 'Error', 'details': 'El servicio de Google Sheets no está disponible'})
+    end_time = time.time()
+    total_time = end_time - start_time
+    return jsonify({'status': 'Success', 'execution_time': f"{total_time:.2f} segundos"})
 
-    sheet = service.spreadsheets()
-    try:
-        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_TINDER).execute()
-        usernames = result.get('values', [])
-
-        statuses = []
-        for i in range(len(usernames)):
-            t_status = check_tinder_status(usernames[i][0] if usernames[i] else '')
-            statuses.append([t_status])
-
-            time.sleep(10)
-
-        sheet.values().update(spreadsheetId=SPREADSHEET_ID, range='K3:K28', valueInputOption='RAW', body={'values': statuses}).execute()
-        return jsonify({'status': 'Success'})
-    except HttpError as error:
-        return jsonify({'status': 'Error', 'details': str(error)})
-    except Exception as e:
-        return jsonify({'status': 'Error', 'details': f'Error desconocido: {e}'})
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
